@@ -1,5 +1,5 @@
 pip install wikipedia
-pip install khmer-nltk
+pip install nltk
 
 python create_sample.py - use for create khmer_corpus.txt file(khmer text sample from wikipedia)
 python split_subset.py - use for split the text from khmer_corpus.txt into test.txt, val.txt and train.txt

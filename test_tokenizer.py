@@ -1,5 +1,5 @@
 from khmernltk import word_tokenize
 
-text = "ភ្នំពេញជារដ្ឋធានីនៃប្រទេសកម្ពុជា។"
+text = "Phnom Penh is a city of Cambodia."
 tokens = word_tokenize(text)
 print(tokens)

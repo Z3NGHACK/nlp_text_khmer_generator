@@ -1,25 +1,29 @@
-# main_project.py - FINAL CORRECTED VERSION
+# main_project.py - ENGLISH VERSION (FINAL CORRECTED & OPTIMIZED)
 import random
 from collections import Counter, defaultdict
 import math
 import numpy as np
-from khmernltk import sentence_tokenize, word_tokenize
+import nltk
+
+# Download required NLTK data (run once)
+nltk.download('punkt', quiet=True)
+nltk.download('punkt_tab', quiet=True)
 
 # ==================== 1. Load the text files ====================
 def load_text(file_path):
     with open(file_path, 'r', encoding='utf-8') as f:
         return f.read()
 
-print("Loading data...")
+print("Loading English data...")
 train_text = load_text('train.txt')
 val_text = load_text('val.txt')
 test_text = load_text('test.txt')
 
-# ==================== 2. Sentence tokenization ====================
-print("Sentence tokenizing...")
-train_sents = sentence_tokenize(train_text)
-val_sents = sentence_tokenize(val_text)
-test_sents = sentence_tokenize(test_text)
+# ==================== 2. Sentence tokenization (English) ====================
+print("Sentence tokenizing with NLTK...")
+train_sents = nltk.sent_tokenize(train_text.strip())
+val_sents = nltk.sent_tokenize(val_text.strip())
+test_sents = nltk.sent_tokenize(test_text.strip())
 
 print(f"Train sentences: {len(train_sents)}")
 print(f"Val sentences: {len(val_sents)}")
@@ -29,11 +33,14 @@ print(f"Test sentences: {len(test_sents)}")
 def tokenize_with_special_tokens(sentences):
     tokenized = []
     for sent in sentences:
-        words = word_tokenize(sent)
+        # Use NLTK word_tokenize for proper English tokenization (handles punctuation, contractions, etc.)
+        words = nltk.word_tokenize(sent)
+        # Optional: lowercase everything for better generalization (common in English LMs)
+        words = [w.lower() for w in words]
         tokenized.append(['<BOS>'] + words + ['<EOS>'])
     return tokenized
 
-print("Word tokenizing...")
+print("Word tokenizing with NLTK...")
 train_tokens = tokenize_with_special_tokens(train_sents)
 val_tokens = tokenize_with_special_tokens(val_sents)
 test_tokens = tokenize_with_special_tokens(test_sents)
@@ -42,11 +49,11 @@ test_tokens = tokenize_with_special_tokens(test_sents)
 all_train_words = [word for sent in train_tokens for word in sent]
 word_counts = Counter(all_train_words)
 
-VOCAB_SIZE = 10000
+VOCAB_SIZE = 10000  # You can increase this for English (e.g., 20000) since it's richer
 top_words = {word for word, _ in word_counts.most_common(VOCAB_SIZE)}
 vocab = top_words | {'<BOS>', '<EOS>', '<UNK>'}
 
-print(f"Vocabulary size: {len(vocab)} (limited to top {VOCAB_SIZE})")
+print(f"Vocabulary size: {len(vocab)} (top {VOCAB_SIZE} + special tokens)")
 
 def replace_unk(tokenized_sents):
     return [[word if word in vocab else '<UNK>' for word in sent] for sent in tokenized_sents]
@@ -72,7 +79,7 @@ fourgram_counts = build_ngram_counts(train_tokens, 4)
 
 total_tokens = sum(unigram_counts.values())
 
-# ==================== Precompute context counts for speed ====================
+# ==================== Precompute context counts ====================
 print("Precomputing context counts for smoothing...")
 context4_counts = defaultdict(int)
 for ngram, cnt in fourgram_counts.items():
@@ -95,7 +102,7 @@ def perplexity(tokenized_sents, prob_func, *args):
     for sent in tokenized_sents:
         history = []
         for word in sent:
-            if len(history) >= 3:
+            if len(history) >= 3:  # We only compute prob after having 3 history words
                 p = prob_func(history[-3:], word, *args)
                 if p <= 0:
                     p = 1e-12
@@ -127,12 +134,12 @@ def backoff_prob(history_3, word):
     if context2_count > 0 and count2 > 0:
         return count2 / context2_count
     
-    # Unigram
+    # Unigram fallback
     uni_count = unigram_counts.get((word,), 0)
     if uni_count > 0:
         return uni_count / total_tokens
     
-    return 1.0 / len(vocab)
+    return 1.0 / len(vocab)  # Very small probability for OOV
 
 print("LM1 (Backoff) ready")
 
@@ -140,7 +147,6 @@ print("LM1 (Backoff) ready")
 def addk_smoothed_prob(word, context, n, k):
     ngram_dict = {1: unigram_counts, 2: bigram_counts, 3: trigram_counts, 4: fourgram_counts}[n]
     
-    # Safely get context count (default to 0 if unseen)
     if n == 1:
         context_count = total_tokens
     elif n == 2:
@@ -163,7 +169,7 @@ def interpolation_prob(history_3, word, lambdas, k):
     p1 = addk_smoothed_prob(word, (), 1, k)
     return l4 * p4 + l3 * p3 + l2 * p2 + l1 * p1
 
-print("LM2 (Interpolation) ready\n")
+print("LM2 (Interpolation + Add-k) ready\n")
 
 # ==================== 9. Tune LM2 on Validation ====================
 print("Tuning LM2 hyperparameters on validation set...")
@@ -171,13 +177,13 @@ best_perp = float('inf')
 best_lambdas = None
 best_k = None
 
-ks = [0.001, 0.01, 0.1, 0.5]
+ks = [0.001, 0.01, 0.05, 0.1]
 lambda_sets = [
     (0.6, 0.25, 0.1, 0.05),
     (0.5, 0.3, 0.15, 0.05),
-    (0.4, 0.3, 0.2, 0.1),
+    (0.4, 0.35, 0.2, 0.05),
     (0.7, 0.2, 0.08, 0.02),
-    (0.3, 0.3, 0.2, 0.2)
+    (0.3, 0.4, 0.2, 0.1)
 ]
 
 for k in ks:
@@ -200,16 +206,16 @@ print(f"LM1 (Backoff) Test Perplexity: {lm1_perp:.2f}")
 print(f"LM2 (Interpolation + Add-k) Test Perplexity: {lm2_perp:.2f}\n")
 
 # ==================== 11. Text Generation ====================
-def generate_text(prob_func, max_words=40, *args):
+def generate_text(prob_func, max_words=50, *args):
     sent = ['<BOS>']
-    while len(sent) < max_words and sent[-1] != '<EOS>':
+    while len(sent) < max_words + 1 and sent[-1] != '<EOS>':
         history_3 = sent[-3:] if len(sent) >= 3 else sent
         probs = {}
         for w in vocab:
-            if w in {'<BOS>', '<UNK>'}:
+            if w in {'<BOS>', '<UNK>', '<EOS>'}:
                 continue
             p = prob_func(history_3, w, *args)
-            if p > 0:
+            if p > 1e-8:  # Filter very low probs for speed
                 probs[w] = p
         if not probs:
             break
@@ -218,17 +224,21 @@ def generate_text(prob_func, max_words=40, *args):
         weights /= weights.sum()
         next_word = np.random.choice(words, p=weights)
         sent.append(next_word)
-    return ' '.join([w for w in sent if w not in {'<BOS>', '<EOS>'}])
+    
+    # Clean output: remove special tokens and join
+    cleaned = [w for w in sent if w not in {'<BOS>', '<EOS>'}]
+    return ' '.join(cleaned).strip()
 
-print("Generating text...")
+print("Generating English text samples...")
 np.random.seed(42)
-print("LM1 generated text:")
-print(generate_text(backoff_prob, 40))
 
-print("\nLM2 generated text (sample 1):")
-print(generate_text(interpolation_prob, 40, best_lambdas, best_k))
+print("\nLM1 (Backoff) generated text:")
+print(generate_text(backoff_prob, 50))
 
-print("\nLM2 generated text (sample 2):")
-print(generate_text(interpolation_prob, 40, best_lambdas, best_k))
+print("\nLM2 (Best Interpolation) generated text - Sample 1:")
+print(generate_text(interpolation_prob, 50, best_lambdas, best_k))
 
-print("\nAll done! Project complete and ready for presentation!")
+print("\nLM2 generated text - Sample 2:")
+print(generate_text(interpolation_prob, 50, best_lambdas, best_k))
+
+print("\nAll done! English N-gram Language Model project complete!")
